@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Device xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <Name>ASUS TUF Gaming F16 / Tianxuan 6 Pro FX608LM (OpenRGB)</Name>
+  <Description>Physical layout for the ASUS TUF Gaming F16 / Tianxuan 6 Pro FX608LM keyboard</Description>
+  <Author>TextlineX</Author>
+  <Type>Keyboard</Type>
+  <Vendor>ASUS</Vendor>
+  <Model>ASUS TUF Gaming F16 / Tianxuan 6 Pro FX608LM (OpenRGB)</Model>
+  <Width>2172</Width>
+  <Height>724</Height>
+  <Leds>
+    <Led Id="Keyboard_VolumeDown"><X>0</X><Y>0</Y><Width>1</Width><Height>1</Height></Led>
+    <Led Id="Keyboard_VolumeUp"><X>0</X><Y>0</Y><Width>1</Width><Height>1</Height></Led>
+    <Led Id="Keyboard_MicMute"><X>0</X><Y>0</Y><Width>1</Width><Height>1</Height></Led>
+    <Led Id="Keyboard_ArmouryCrate"><X>0</X><Y>0</Y><Width>1</Width><Height>1</Height></Led>
+    <Led Id="Keyboard_Power"><X>2008</X><Y>48</Y><Width>104</Width><Height>94</Height></Led>
+    <Led Id="Keyboard_Escape"><X>70</X><Y>80</Y><Width>117</Width><Height>73</Height></Led>
+    <Led Id="Keyboard_F1"><X>261</X><Y>80</Y><Width>109</Width><Height>73</Height></Led>
+    <Led Id="Keyboard_F2"><X>371</X><Y>80</Y><Width>111</Width><Height>73</Height></Led>
+    <Led Id="Keyboard_F3"><X>483</X><Y>80</Y><Width>109</Width><Height>73</Height></Led>
+    <Led Id="Keyboard_F4"><X>593</X><Y>80</Y><Width>119</Width><Height>73</Height></Led>
+    <Led Id="Keyboard_F5"><X>741</X><Y>80</Y><Width>109</Width><Height>73</Height></Led>
+    <Led Id="Keyboard_F6"><X>851</X><Y>80</Y><Width>111</Width><Height>73</Height></Led>
+    <Led Id="Keyboard_F7"><X>963</X><Y>80</Y><Width>110</Width><Height>73</Height></Led>
+    <Led Id="Keyboard_F8"><X>1075</X><Y>80</Y><Width>115</Width><Height>73</Height></Led>
+    <Led Id="Keyboard_F9"><X>1220</X><Y>80</Y><Width>106</Width><Height>73</Height></Led>
+    <Led Id="Keyboard_F10"><X>1327</X><Y>80</Y><Width>108</Width><Height>73</Height></Led>
+    <Led Id="Keyboard_F11"><X>1437</X><Y>80</Y><Width>108</Width><Height>73</Height></Led>
+    <Led Id="Keyboard_F12"><X>1546</X><Y>80</Y><Width>103</Width><Height>73</Height></Led>
+    <Led Id="Keyboard_PrintScreen"><X>1748</X><Y>80</Y><Width>80</Width><Height>73</Height></Led>
+    <Led Id="Keyboard_ScrollLock"><X>1666</X><Y>80</Y><Width>80</Width><Height>73</Height></Led>
+    <Led Id="Keyboard_Pause"><X>0</X><Y>0</Y><Width>1</Width><Height>1</Height></Led>
+    <Led Id="Keyboard_Insert"><X>1908</X><Y>80</Y><Width>80</Width><Height>73</Height></Led>
+    <Led Id="Keyboard_Home"><X>1828</X><Y>80</Y><Width>80</Width><Height>73</Height></Led>
+    <Led Id="Keyboard_PageUp"><X>0</X><Y>0</Y><Width>1</Width><Height>1</Height></Led>
+    <Led Id="Keyboard_GraveAccentAndTilde"><X>69</X><Y>167</Y><Width>107</Width><Height>94</Height></Led>
+    <Led Id="Keyboard_1"><X>177</X><Y>167</Y><Width>107</Width><Height>94</Height></Led>
+    <Led Id="Keyboard_2"><X>286</X><Y>167</Y><Width>107</Width><Height>94</Height></Led>
+    <Led Id="Keyboard_3"><X>395</X><Y>167</Y><Width>106</Width><Height>94</Height></Led>
+    <Led Id="Keyboard_4"><X>504</X><Y>167</Y><Width>105</Width><Height>94</Height></Led>
+    <Led Id="Keyboard_5"><X>611</X><Y>167</Y><Width>107</Width><Height>94</Height></Led>
+    <Led Id="Keyboard_6"><X>719</X><Y>167</Y><Width>107</Width><Height>94</Height></Led>
+    <Led Id="Keyboard_7"><X>828</X><Y>167</Y><Width>106</Width><Height>94</Height></Led>
+    <Led Id="Keyboard_8"><X>937</X><Y>167</Y><Width>105</Width><Height>94</Height></Led>
+    <Led Id="Keyboard_9"><X>1044</X><Y>167</Y><Width>106</Width><Height>94</Height></Led>
+    <Led Id="Keyboard_0"><X>1152</X><Y>167</Y><Width>106</Width><Height>94</Height></Led>
+    <Led Id="Keyboard_MinusAndUnderscore"><X>1261</X><Y>167</Y><Width>106</Width><Height>94</Height></Led>
+    <Led Id="Keyboard_EqualsAndPlus"><X>1368</X><Y>167</Y><Width>106</Width><Height>94</Height></Led>
+    <Led Id="Keyboard_Backspace"><X>1476</X><Y>167</Y><Width>176</Width><Height>94</Height></Led>
+    <Led Id="Keyboard_NumLock"><X>1662</X><Y>167</Y><Width>109</Width><Height>94</Height></Led>
+    <Led Id="Keyboard_NumSlash"><X>1774</X><Y>167</Y><Width>109</Width><Height>94</Height></Led>
+    <Led Id="Keyboard_NumAsterisk"><X>1885</X><Y>167</Y><Width>107</Width><Height>94</Height></Led>
+    <Led Id="Keyboard_NumMinus"><X>1994</X><Y>167</Y><Width>111</Width><Height>94</Height></Led>
+    <Led Id="Keyboard_Tab"><X>69</X><Y>262</Y><Width>157</Width><Height>103</Height></Led>
+    <Led Id="Keyboard_Q"><X>228</X><Y>262</Y><Width>108</Width><Height>103</Height></Led>
+    <Led Id="Keyboard_W"><X>337</X><Y>262</Y><Width>107</Width><Height>103</Height></Led>
+    <Led Id="Keyboard_E"><X>448</X><Y>262</Y><Width>106</Width><Height>103</Height></Led>
+    <Led Id="Keyboard_R"><X>557</X><Y>262</Y><Width>106</Width><Height>103</Height></Led>
+    <Led Id="Keyboard_T"><X>666</X><Y>262</Y><Width>106</Width><Height>103</Height></Led>
+    <Led Id="Keyboard_Y"><X>775</X><Y>262</Y><Width>106</Width><Height>103</Height></Led>
+    <Led Id="Keyboard_U"><X>884</X><Y>262</Y><Width>106</Width><Height>103</Height></Led>
+    <Led Id="Keyboard_I"><X>993</X><Y>262</Y><Width>105</Width><Height>103</Height></Led>
+    <Led Id="Keyboard_O"><X>1101</X><Y>262</Y><Width>104</Width><Height>103</Height></Led>
+    <Led Id="Keyboard_P"><X>1209</X><Y>262</Y><Width>104</Width><Height>103</Height></Led>
+    <Led Id="Keyboard_BracketLeft"><X>1317</X><Y>262</Y><Width>105</Width><Height>103</Height></Led>
+    <Led Id="Keyboard_BracketRight"><X>1426</X><Y>262</Y><Width>106</Width><Height>103</Height></Led>
+    <Led Id="Keyboard_Backslash"><X>1535</X><Y>262</Y><Width>116</Width><Height>103</Height></Led>
+    <Led Id="Keyboard_Num7"><X>1662</X><Y>262</Y><Width>109</Width><Height>103</Height></Led>
+    <Led Id="Keyboard_Num8"><X>1774</X><Y>262</Y><Width>109</Width><Height>103</Height></Led>
+    <Led Id="Keyboard_Num9"><X>1885</X><Y>262</Y><Width>107</Width><Height>103</Height></Led>
+    <Led Id="Keyboard_NumPlus"><X>1994</X><Y>262</Y><Width>111</Width><Height>207</Height></Led>
+    <Led Id="Keyboard_CapsLock"><X>69</X><Y>367</Y><Width>193</Width><Height>103</Height></Led>
+    <Led Id="Keyboard_A"><X>263</X><Y>367</Y><Width>106</Width><Height>103</Height></Led>
+    <Led Id="Keyboard_S"><X>372</X><Y>367</Y><Width>106</Width><Height>103</Height></Led>
+    <Led Id="Keyboard_D"><X>480</X><Y>367</Y><Width>105</Width><Height>103</Height></Led>
+    <Led Id="Keyboard_F"><X>588</X><Y>367</Y><Width>105</Width><Height>103</Height></Led>
+    <Led Id="Keyboard_G"><X>696</X><Y>367</Y><Width>105</Width><Height>103</Height></Led>
+    <Led Id="Keyboard_H"><X>805</X><Y>367</Y><Width>105</Width><Height>103</Height></Led>
+    <Led Id="Keyboard_J"><X>913</X><Y>367</Y><Width>105</Width><Height>103</Height></Led>
+    <Led Id="Keyboard_K"><X>1021</X><Y>367</Y><Width>106</Width><Height>103</Height></Led>
+    <Led Id="Keyboard_L"><X>1131</X><Y>367</Y><Width>107</Width><Height>103</Height></Led>
+    <Led Id="Keyboard_SemicolonAndColon"><X>1241</X><Y>367</Y><Width>106</Width><Height>103</Height></Led>
+    <Led Id="Keyboard_ApostropheAndDoubleQuote"><X>1350</X><Y>367</Y><Width>106</Width><Height>103</Height></Led>
+    <Led Id="Keyboard_Enter"><X>1459</X><Y>367</Y><Width>193</Width><Height>103</Height></Led>
+    <Led Id="Keyboard_Num4"><X>1662</X><Y>367</Y><Width>109</Width><Height>103</Height></Led>
+    <Led Id="Keyboard_Num5"><X>1774</X><Y>367</Y><Width>109</Width><Height>103</Height></Led>
+    <Led Id="Keyboard_Num6"><X>1885</X><Y>367</Y><Width>107</Width><Height>103</Height></Led>
+    <Led Id="Keyboard_LeftShift"><X>69</X><Y>472</Y><Width>237</Width><Height>102</Height></Led>
+    <Led Id="Keyboard_Z"><X>309</X><Y>472</Y><Width>108</Width><Height>102</Height></Led>
+    <Led Id="Keyboard_X"><X>420</X><Y>472</Y><Width>107</Width><Height>102</Height></Led>
+    <Led Id="Keyboard_C"><X>530</X><Y>472</Y><Width>106</Width><Height>102</Height></Led>
+    <Led Id="Keyboard_V"><X>639</X><Y>472</Y><Width>106</Width><Height>102</Height></Led>
+    <Led Id="Keyboard_B"><X>749</X><Y>472</Y><Width>106</Width><Height>102</Height></Led>
+    <Led Id="Keyboard_N"><X>859</X><Y>472</Y><Width>106</Width><Height>102</Height></Led>
+    <Led Id="Keyboard_M"><X>968</X><Y>472</Y><Width>106</Width><Height>102</Height></Led>
+    <Led Id="Keyboard_CommaAndLessThan"><X>1077</X><Y>472</Y><Width>106</Width><Height>102</Height></Led>
+    <Led Id="Keyboard_PeriodAndBiggerThan"><X>1186</X><Y>472</Y><Width>108</Width><Height>102</Height></Led>
+    <Led Id="Keyboard_SlashAndQuestionMark"><X>1297</X><Y>472</Y><Width>107</Width><Height>102</Height></Led>
+    <Led Id="Keyboard_RightShift"><X>1407</X><Y>472</Y><Width>245</Width><Height>102</Height></Led>
+    <Led Id="Keyboard_ArrowUp"><X>0</X><Y>0</Y><Width>1</Width><Height>1</Height></Led>
+    <Led Id="Keyboard_Num1"><X>1662</X><Y>472</Y><Width>109</Width><Height>102</Height></Led>
+    <Led Id="Keyboard_Num2"><X>1774</X><Y>472</Y><Width>109</Width><Height>102</Height></Led>
+    <Led Id="Keyboard_Num3"><X>1885</X><Y>472</Y><Width>107</Width><Height>102</Height></Led>
+    <Led Id="Keyboard_NumEnter"><X>1995</X><Y>472</Y><Width>110</Width><Height>202</Height></Led>
+    <Led Id="Keyboard_LeftCtrl"><X>69</X><Y>585</Y><Width>118</Width><Height>90</Height></Led>
+    <Led Id="Keyboard_LeftGui"><X>193</X><Y>585</Y><Width>89</Width><Height>90</Height></Led>
+    <Led Id="Keyboard_LeftAlt"><X>294</X><Y>585</Y><Width>108</Width><Height>90</Height></Led>
+    <Led Id="Keyboard_Space"><X>420</X><Y>585</Y><Width>654</Width><Height>90</Height></Led>
+    <Led Id="Keyboard_RightAlt"><X>1077</X><Y>585</Y><Width>106</Width><Height>90</Height></Led>
+    <Led Id="Keyboard_Menu"><X>1186</X><Y>585</Y><Width>108</Width><Height>90</Height></Led>
+    <Led Id="Keyboard_RightCtrl"><X>1297</X><Y>585</Y><Width>115</Width><Height>90</Height></Led>
+    <Led Id="Keyboard_ArrowLeft"><X>1430</X><Y>585</Y><Width>109</Width><Height>90</Height></Led>
+    <Led Id="Keyboard_ArrowDown"><X>1542</X><Y>585</Y><Width>111</Width><Height>90</Height></Led>
+    <Led Id="Keyboard_ArrowRight"><X>1656</X><Y>585</Y><Width>116</Width><Height>90</Height></Led>
+    <Led Id="Keyboard_Num0"><X>1774</X><Y>585</Y><Width>109</Width><Height>90</Height></Led>
+    <Led Id="Keyboard_NumPeriodAndDelete"><X>1886</X><Y>585</Y><Width>107</Width><Height>90</Height></Led>
+  </Leds>
+  <CustomData>
+    <DeviceImage>Keyboard-TUF-F16.png</DeviceImage>
+  </CustomData>
+</Device>

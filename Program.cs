@@ -112,6 +112,10 @@ internal static class Native
 
     [DllImport("hid.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool HidD_GetInputReport(SafeFileHandle hidDeviceObject, byte[] report, int reportLength);
+
+    [DllImport("hid.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
     internal static extern bool HidD_GetPreparsedData(SafeFileHandle hidDeviceObject, out IntPtr preparsedData);
 
     [DllImport("hid.dll")]
@@ -129,6 +133,40 @@ internal static class Native
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static extern bool WriteFile(SafeFileHandle file, byte[] buffer, int numberOfBytesToWrite,
         out int numberOfBytesWritten, IntPtr overlapped);
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct NativeOverlapped
+    {
+        public IntPtr Internal;
+        public IntPtr InternalHigh;
+        public uint Offset;
+        public uint OffsetHigh;
+        public IntPtr EventHandle;
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    internal static extern IntPtr CreateEvent(IntPtr attributes, bool manualReset, bool initialState, string? name);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    internal static extern uint WaitForSingleObject(IntPtr handle, uint milliseconds);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool ReadFile(SafeFileHandle file, byte[] buffer, int numberOfBytesToRead,
+        IntPtr numberOfBytesRead, ref NativeOverlapped overlapped);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool GetOverlappedResult(SafeFileHandle file, ref NativeOverlapped overlapped,
+        out uint numberOfBytesTransferred, bool wait);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool CancelIoEx(SafeFileHandle file, IntPtr overlapped);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool CloseHandle(IntPtr handle);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -148,6 +186,9 @@ internal static class Native
     internal const uint FileShareWrite = 0x2;
     internal const uint OpenExisting = 3;
     internal const uint FileFlagOverlapped = 0x40000000;
+    internal const uint ErrorIoPending = 997;
+    internal const uint WaitObject0 = 0;
+    internal const uint WaitTimeout = 258;
 }
 
 internal readonly record struct Rgb(byte R, byte G, byte B);
@@ -266,8 +307,15 @@ internal sealed class Zh980Writer : IDisposable
     private const int WiredPacketDataLength = 64;
     private const int WiredColorBufferSize = 576;
     private const int WirelessMinimumReportLength = 33;
+    // ZUOHE's installed WebHID driver uses the common 0xAA/0x55 protocol for
+    // the 2.4G dongle. Windows HID buffers include report ID 0 at index zero.
+    private const byte WirelessPacketHeader = 0xAA;
+    private const byte WirelessPacketTail = 0x55;
+    private const byte WirelessSetLedEffectCommand = 0x23;
+    private const byte WirelessStaticMode = 1;
     private SafeFileHandle? _handle;
     private string? _path;
+    private ushort _inputReportLength;
     private ushort _outputReportLength;
     private ushort _featureReportLength;
     private int _successfulApplies;
@@ -361,24 +409,37 @@ internal sealed class Zh980Writer : IDisposable
     private bool ApplyWireless(IReadOnlyList<Rgb> colors)
     {
         var color = colors.Count == 0 ? new Rgb(0, 0, 0) : Average(colors);
-        // ZH980's 2.4G receiver exposes one 32-byte OUTPUT report. Windows
-        // prepends report ID 0, making the user-mode buffer 33 bytes. The
-        // wireless firmware accepts one all-in-one 05 10 packet; unlike the
-        // wired keyboard protocol it has no checksum or commit sequence.
+        // The installed ZUOHE app sends SET_LED_EFFECT (0x23) as one 32-byte
+        // WebHID output report. Windows prepends report ID 0, making the
+        // user-mode buffer 33 bytes. Protocol data starts at user buffer
+        // index 9 (protocol packet index 8): mode, RGB, driver setting,
+        // secondary RGB, color mode, brightness, speed, direction, effect
+        // mode type, reserved, 0xAA, 0x55.
         var report = new byte[Math.Max(WirelessMinimumReportLength, (int)_outputReportLength)];
-        report[1] = 0x05;
-        report[2] = 0x10;
-        report[4] = color is { R: 0, G: 0, B: 0 } ? (byte)0 : (byte)1;
-        report[5] = color.R;
-        report[6] = color.G;
-        report[7] = color.B;
-        report[12] = 0x00;
-        report[13] = 0x05;
-        report[14] = 0x03;
-        report[15] = 0x00;
-        report[18] = 0xAA;
-        report[19] = 0x55;
-
+        report[1] = WirelessPacketHeader;
+        report[2] = WirelessSetLedEffectCommand;
+        report[3] = 16;
+        report[4] = 0;
+        report[5] = 0;
+        report[6] = 1; // last packet flag
+        report[7] = 0;
+        report[8] = 0; // protocol packet byte 7 reserved
+        report[9] = WirelessStaticMode;
+        report[10] = color.R;
+        report[11] = color.G;
+        report[12] = color.B;
+        report[13] = 255; // driver setting
+        report[14] = 0;   // secondary R
+        report[15] = 0;   // secondary G
+        report[16] = 0;   // secondary B
+        report[17] = 0;   // color mode: single color
+        report[18] = 5;   // brightness
+        report[19] = 3;   // speed
+        report[20] = 0;   // direction
+        report[21] = 0;   // effect mode type
+        report[22] = 0;   // protocol packet byte 13 reserved
+        report[23] = WirelessPacketHeader;
+        report[24] = WirelessPacketTail;
         var success = SendReport(report, $"2.4G static RGB ({color.R},{color.G},{color.B})");
         if (success && Interlocked.Increment(ref _successfulApplies) <= 3)
             Console.WriteLine($"ZH980 2.4G lighting update applied ({color.R},{color.G},{color.B})");
@@ -473,6 +534,75 @@ internal sealed class Zh980Writer : IDisposable
         return Apply(colors);
     }
 
+    internal bool DiagnoseWireless()
+    {
+        TryOpen();
+        if (!IsOpen || _path is null || !IsWirelessLightingInterface(_path))
+        {
+            Console.WriteLine("ZH980 wireless diagnostic skipped: wireless HID is not open.");
+            return false;
+        }
+
+        var report = new byte[Math.Max(WirelessMinimumReportLength, (int)_outputReportLength)];
+        report[1] = WirelessPacketHeader;
+        report[2] = 0x10; // GET_DEVICE_INFO
+        report[3] = 48;
+        report[6] = 1;
+        var hidReply = SendAndReadDiagnostic(report, "HidD_SetOutputReport", useOutputReport: true);
+        var writeReply = SendAndReadDiagnostic(report, "WriteFile", useOutputReport: false);
+        return hidReply || writeReply;
+    }
+
+    private bool SendAndReadDiagnostic(byte[] report, string transport, bool useOutputReport)
+    {
+        using var readHandle = Native.CreateFile(_path!, Native.GenericRead | Native.GenericWrite,
+            Native.FileShareRead | Native.FileShareWrite, IntPtr.Zero, Native.OpenExisting,
+            Native.FileFlagOverlapped, IntPtr.Zero);
+        if (readHandle.IsInvalid)
+        {
+            Console.WriteLine($"ZH980 diagnostic {transport}: read handle failed; Win32={Marshal.GetLastWin32Error()}");
+            return false;
+        }
+
+        var input = new byte[Math.Max(WirelessMinimumReportLength, (int)_inputReportLength)];
+        var readTask = Task.Run(() => TryReadInputReport(readHandle, input, 1000));
+        Thread.Sleep(25);
+        var written = 0;
+        var sent = useOutputReport
+            ? Native.HidD_SetOutputReport(_handle!, report, report.Length)
+            : Native.WriteFile(_handle!, report, report.Length, out written, IntPtr.Zero) && written == report.Length;
+        var received = readTask.GetAwaiter().GetResult();
+        Console.WriteLine($"ZH980 diagnostic GET_DEVICE_INFO {transport}: sent={sent}; written={written}; received={received}; bytes={Convert.ToHexString(input)}");
+        return sent && received;
+    }
+
+    private static bool TryReadInputReport(SafeFileHandle handle, byte[] buffer, int timeoutMilliseconds)
+    {
+        var eventHandle = Native.CreateEvent(IntPtr.Zero, true, false, null);
+        if (eventHandle == IntPtr.Zero)
+            return false;
+
+        try
+        {
+            var overlapped = new Native.NativeOverlapped { EventHandle = eventHandle };
+            var started = Native.ReadFile(handle, buffer, buffer.Length, IntPtr.Zero, ref overlapped);
+            if (!started && Marshal.GetLastWin32Error() != Native.ErrorIoPending)
+                return false;
+
+            if (Native.WaitForSingleObject(eventHandle, (uint)timeoutMilliseconds) == Native.WaitTimeout)
+            {
+                Native.CancelIoEx(handle, IntPtr.Zero);
+                return false;
+            }
+
+            return Native.GetOverlappedResult(handle, ref overlapped, out var bytes, false) && bytes > 0;
+        }
+        finally
+        {
+            Native.CloseHandle(eventHandle);
+        }
+    }
+
     private bool SendCommand(byte[] report, byte header, byte command, string label)
     {
         Array.Clear(report);
@@ -489,6 +619,9 @@ internal sealed class Zh980Writer : IDisposable
         var wireless = _path is not null && IsWirelessLightingInterface(_path);
         var transport = wireless ? "write" : "output";
         var written = 0;
+        // The official Windows HID path uses WriteFile for this vendor output
+        // report. HidD_SetOutputReport can return success while the receiver
+        // silently drops the command.
         var ok = wireless
             ? Native.WriteFile(_handle, report, report.Length, out written, IntPtr.Zero) && written == report.Length
             : Native.HidD_SetOutputReport(_handle, report, report.Length);
@@ -526,12 +659,14 @@ internal sealed class Zh980Writer : IDisposable
         _handle?.Dispose();
         _handle = null;
         _path = null;
+        _inputReportLength = 0;
         _outputReportLength = 0;
         _featureReportLength = 0;
     }
 
     private void ReadReportCapabilities(SafeFileHandle handle)
     {
+        _inputReportLength = 0;
         _featureReportLength = 0;
         _outputReportLength = 0;
         var buffersOk = Native.HidD_SetNumInputBuffers(handle, 64);
@@ -547,6 +682,7 @@ internal sealed class Zh980Writer : IDisposable
             Console.WriteLine($"ZH980 HID caps status=0x{status:X8}, input={caps.InputReportByteLength}, output={caps.OutputReportByteLength}, feature={caps.FeatureReportByteLength}");
             if (status == Native.HidpStatusSuccess)
             {
+                _inputReportLength = caps.InputReportByteLength;
                 _outputReportLength = caps.OutputReportByteLength;
                 _featureReportLength = caps.FeatureReportByteLength;
             }
@@ -635,6 +771,9 @@ internal sealed class OpenRgbSdkServer : IAsyncDisposable
     private readonly CancellationTokenSource _stop = new();
     private readonly object _colorLock = new();
     private readonly Dictionary<uint, Rgb[]> _colors;
+    private readonly Dictionary<uint, ModeSettings> _modeSettings;
+
+    private readonly record struct ModeSettings(uint Speed, uint Brightness);
 
     internal OpenRgbSdkServer(
         int port,
@@ -648,6 +787,9 @@ internal sealed class OpenRgbSdkServer : IAsyncDisposable
         _colors = _devices.ToDictionary(
             device => device.Id,
             device => Enumerable.Repeat(new Rgb(0, 0, 0), device.Leds.Count).ToArray());
+        _modeSettings = _devices.ToDictionary(
+            device => device.Id,
+            _ => new ModeSettings(50, 100));
     }
 
     internal async Task RunAsync()
@@ -753,7 +895,17 @@ internal sealed class OpenRgbSdkServer : IAsyncDisposable
                 ApplySingleColor(deviceId, payload);
                 return negotiatedProtocol;
             case 1100:
+                // SetCustomMode() selects the Direct mode. There is no
+                // payload in OpenRGB protocol versions 0-5.
+                return negotiatedProtocol;
             case 1101:
+                ApplyModeUpdate(deviceId, payload, negotiatedProtocol);
+                return negotiatedProtocol;
+            case 1102:
+                // SaveMode() is intentionally a no-op: Artemis owns the
+                // profile/layout persistence, while this bridge keeps the
+                // active mode in memory for the current connection.
+                return negotiatedProtocol;
             case 140:
                 return negotiatedProtocol;
             default:
@@ -822,17 +974,126 @@ internal sealed class OpenRgbSdkServer : IAsyncDisposable
         StoreAndApply(device, next);
     }
 
+    private void ApplyModeUpdate(uint deviceId, byte[] payload, uint protocol)
+    {
+        var device = FindDevice(deviceId);
+        if (device is null || payload.Length < 8)
+            return;
+
+        var dataSize = BinaryPrimitives.ReadUInt32LittleEndian(payload.AsSpan(0, 4));
+        var modeIndex = BinaryPrimitives.ReadInt32LittleEndian(payload.AsSpan(4, 4));
+        if (dataSize != payload.Length || modeIndex != 0)
+            return;
+
+        var offset = 8;
+        if (!TryReadString(payload, ref offset, out _))
+            return;
+        if (protocol < 6 && !TryReadUInt32(payload, ref offset, out _))
+            return;
+
+        if (!TryReadUInt32(payload, ref offset, out _) ||
+            !TryReadUInt32(payload, ref offset, out var speedMin) ||
+            !TryReadUInt32(payload, ref offset, out var speedMax) ||
+            !TryReadUInt32(payload, ref offset, out var brightnessMin) ||
+            !TryReadUInt32(payload, ref offset, out var brightnessMax) ||
+            !TryReadUInt32(payload, ref offset, out _) ||
+            !TryReadUInt32(payload, ref offset, out _) ||
+            !TryReadUInt32(payload, ref offset, out var speed) ||
+            !TryReadUInt32(payload, ref offset, out var brightness) ||
+            !TryReadUInt32(payload, ref offset, out _) ||
+            !TryReadUInt32(payload, ref offset, out _) ||
+            !TryReadUInt16(payload, ref offset, out _))
+        {
+            return;
+        }
+
+        var clampedSpeed = Math.Clamp(speed, speedMin, Math.Max(speedMin, speedMax));
+        var clampedBrightness = Math.Clamp(brightness, brightnessMin, Math.Max(brightnessMin, brightnessMax));
+        lock (_colorLock)
+            _modeSettings[device.Id] = new ModeSettings(clampedSpeed, clampedBrightness);
+
+        Console.WriteLine($"SDK mode update: {device.Name}; speed={clampedSpeed}; brightness={clampedBrightness}");
+        Reapply(device);
+    }
+
     private void StoreAndApply(DeviceDefinition device, Rgb[] colors)
     {
+        var copy = colors.ToArray();
+        ModeSettings settings;
         lock (_colorLock)
-            _colors[device.Id] = colors;
-        device.ApplyColors?.Invoke(colors);
+        {
+            _colors[device.Id] = copy;
+            settings = _modeSettings[device.Id];
+        }
+        device.ApplyColors?.Invoke(ScaleBrightness(copy, settings.Brightness));
+    }
+
+    private void Reapply(DeviceDefinition device)
+    {
+        Rgb[] colors;
+        ModeSettings settings;
+        lock (_colorLock)
+        {
+            colors = _colors[device.Id].ToArray();
+            settings = _modeSettings[device.Id];
+        }
+        device.ApplyColors?.Invoke(ScaleBrightness(colors, settings.Brightness));
+    }
+
+    private static Rgb[] ScaleBrightness(IReadOnlyList<Rgb> colors, uint brightness)
+    {
+        if (brightness >= 100)
+            return colors.ToArray();
+
+        return colors
+            .Select(color => new Rgb(
+                (byte)(color.R * brightness / 100),
+                (byte)(color.G * brightness / 100),
+                (byte)(color.B * brightness / 100)))
+            .ToArray();
     }
 
     private static Rgb DecodeColor(byte[] payload, int offset)
     {
         var value = BinaryPrimitives.ReadUInt32LittleEndian(payload.AsSpan(offset, 4));
         return new Rgb((byte)value, (byte)(value >> 8), (byte)(value >> 16));
+    }
+
+    private static bool TryReadUInt16(byte[] payload, ref int offset, out ushort value)
+    {
+        if (offset < 0 || offset + 2 > payload.Length)
+        {
+            value = 0;
+            return false;
+        }
+
+        value = BinaryPrimitives.ReadUInt16LittleEndian(payload.AsSpan(offset, 2));
+        offset += 2;
+        return true;
+    }
+
+    private static bool TryReadUInt32(byte[] payload, ref int offset, out uint value)
+    {
+        if (offset < 0 || offset + 4 > payload.Length)
+        {
+            value = 0;
+            return false;
+        }
+
+        value = BinaryPrimitives.ReadUInt32LittleEndian(payload.AsSpan(offset, 4));
+        offset += 4;
+        return true;
+    }
+
+    private static bool TryReadString(byte[] payload, ref int offset, out string value)
+    {
+        value = string.Empty;
+        if (!TryReadUInt16(payload, ref offset, out var length) || offset + length > payload.Length)
+            return false;
+
+        value = Encoding.UTF8.GetString(payload, offset, length).TrimEnd('\0');
+        offset += length;
+        return true;
     }
 
     private static byte[] UInt32Payload(uint value)
@@ -845,7 +1106,7 @@ internal sealed class OpenRgbSdkServer : IAsyncDisposable
     private static byte[] BuildControllerResponse(DeviceDefinition deviceDefinition, uint protocol)
     {
         using var device = new PacketWriter();
-        device.WriteInt32(5);
+        device.WriteInt32((int)(deviceDefinition.Kind == ControllerKind.Mouse ? 6 : 5));
         device.WriteString(deviceDefinition.Name);
         device.WriteString(deviceDefinition.Manufacturer);
         device.WriteString(deviceDefinition.Description);
@@ -859,17 +1120,22 @@ internal sealed class OpenRgbSdkServer : IAsyncDisposable
         // named exactly "Direct". This is our per-LED custom transport mode.
         device.WriteString("Direct");
         device.WriteInt32(0);
-        device.WriteUInt32(1u << 5);
-        device.WriteUInt32(0);
-        device.WriteUInt32(0);
-        device.WriteUInt32(0);
-        device.WriteUInt32(100);
-        device.WriteUInt32(0);
-        device.WriteUInt32(0);
-        device.WriteUInt32(0);
-        device.WriteUInt32(100);
-        device.WriteUInt32(0);
-        device.WriteUInt32(1);
+        // OpenRGB mode flags: speed (bit 0), brightness (bit 4), and
+        // per-LED colors (bit 5). The previous response declared only
+        // per-LED colors and advertised a zero-width speed range, which made
+        // Artemis hide the speed/brightness controls.
+        const uint modeFlags = (1u << 0) | (1u << 4) | (1u << 5);
+        device.WriteUInt32(modeFlags);
+        device.WriteUInt32(1);   // speed minimum
+        device.WriteUInt32(100); // speed maximum
+        device.WriteUInt32(1);   // brightness minimum
+        device.WriteUInt32(100); // brightness maximum
+        device.WriteUInt32(0);   // mode-specific color minimum
+        device.WriteUInt32(0);   // mode-specific color maximum
+        device.WriteUInt32(50);  // current speed
+        device.WriteUInt32(100); // current brightness
+        device.WriteUInt32(0);   // direction
+        device.WriteUInt32(0);   // color mode
         device.WriteUInt16(0);
 
         device.WriteUInt16(1);
@@ -1015,6 +1281,12 @@ internal static class Program
             return;
         }
 
+        if (args.Any(a => a.Equals("--diagnose-zh980", StringComparison.OrdinalIgnoreCase)))
+        {
+            Console.WriteLine($"ZH980 diagnostic result: {writer.DiagnoseWireless()}");
+            return;
+        }
+
         if (args.Any(a => a.Equals("--demo-all-green", StringComparison.OrdinalIgnoreCase)))
         {
             var zhGreen = Enumerable.Repeat(new Rgb(0, 255, 0), Zh980Layout.Leds.Count).ToArray();
@@ -1024,9 +1296,9 @@ internal static class Program
             var asusGreen = Enumerable.Repeat(new Rgb(0, 255, 0), 105).ToArray();
             var asusOff = Enumerable.Repeat(new Rgb(0, 0, 0), 105).ToArray();
 
-            for (var pass = 1; pass <= 2; pass++)
+            for (var pass = 1; pass <= 3; pass++)
             {
-                Console.WriteLine($"Hardware green test {pass}/2: sending green.");
+                Console.WriteLine($"Hardware green test {pass}/3: sending green.");
                 Console.WriteLine($"ZH980 transport result: {writer.Apply(zhGreen)}");
                 Console.WriteLine($"Razer transport result: {razerWriter.Apply(razerGreen)}");
                 Console.WriteLine($"ASUS transport result: {asusWriter.Apply(asusGreen)}");

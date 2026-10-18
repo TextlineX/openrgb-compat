@@ -54,7 +54,7 @@ internal static class DeviceCatalog
 
             new DeviceDefinition(
                 2,
-                "ASUS TUF Gaming F16 / 天选 6 Pro FX608LM (OpenRGB)",
+                "ASUS TUF Gaming F16 / Tianxuan 6 Pro FX608LM (OpenRGB)",
                 "ASUS",
                 "ASUS FX608LM full-size RGB keyboard layout backed by one ITE5570 lamp",
                 "FX608LM-compat-1",

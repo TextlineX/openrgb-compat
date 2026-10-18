@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Device xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <Name>Razer Basilisk V3 X HyperSpeed (OpenRGB)</Name>
+  <Description>Official-image layout for the Razer Basilisk V3 X HyperSpeed</Description>
+  <Author>TextlineX</Author>
+  <Type>Mouse</Type>
+  <Vendor>Razer</Vendor>
+  <Model>Razer Basilisk V3 X HyperSpeed (OpenRGB)</Model>
+  <Width>280</Width>
+  <Height>350</Height>
+  <LedUnitWidth>30</LedUnitWidth>
+  <LedUnitHeight>65</LedUnitHeight>
+  <Leds>
+    <Led Id="Mouse_ScrollWheel">
+      <X>130</X>
+      <Y>61</Y>
+      <Width>30</Width>
+      <Height>65</Height>
+    </Led>
+  </Leds>
+  <CustomData>
+    <DeviceImage>Mouse-Basilisk-V3-X.png</DeviceImage>
+  </CustomData>
+</Device>
