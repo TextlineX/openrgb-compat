@@ -551,22 +551,30 @@ internal sealed class OpenRgbSdkServer : IAsyncDisposable
 {
     private const uint ProtocolVersion = 5;
     private readonly TcpListener _listener;
-    private readonly Zh980Writer _writer;
+    private readonly IReadOnlyList<DeviceDefinition> _devices;
     private readonly CancellationTokenSource _stop = new();
     private readonly object _colorLock = new();
-    private Rgb[] _colors = Enumerable.Repeat(new Rgb(0, 0, 0), Zh980Layout.Leds.Count).ToArray();
+    private readonly Dictionary<uint, Rgb[]> _colors;
 
     internal OpenRgbSdkServer(int port, Zh980Writer writer)
     {
         _listener = new TcpListener(IPAddress.Loopback, port);
-        _writer = writer;
+        _devices = DeviceCatalog.Create(writer);
+        DeviceCatalog.Validate(_devices);
+        _colors = _devices.ToDictionary(
+            device => device.Id,
+            device => Enumerable.Repeat(new Rgb(0, 0, 0), device.Leds.Count).ToArray());
     }
 
     internal async Task RunAsync()
     {
         _listener.Start();
-        Console.WriteLine($"ZH980 Artemis compatibility SDK listening on 127.0.0.1:{((IPEndPoint)_listener.LocalEndpoint).Port}");
-        Console.WriteLine($"Controller: ZORNHER ZH980 Physical ANSI (OpenRGB), LEDs={Zh980Layout.Leds.Count}, numpad=enabled");
+        Console.WriteLine($"Artemis/OpenRGB compatibility SDK listening on 127.0.0.1:{((IPEndPoint)_listener.LocalEndpoint).Port}");
+        foreach (var device in _devices)
+        {
+            var status = device.ApplyColors is null ? "layout-only" : "hardware-backed";
+            Console.WriteLine($"Controller {device.Id}: {device.Name}, LEDs={device.Leds.Count}, {status}");
+        }
         try
         {
             while (!_stop.IsCancellationRequested)
@@ -637,24 +645,28 @@ internal sealed class OpenRgbSdkServer : IAsyncDisposable
                 await SendPacketAsync(stream, deviceId, 40, UInt32Payload(negotiatedProtocol));
                 return negotiatedProtocol;
             case 0:
-                await SendPacketAsync(stream, 0, 0, UInt32Payload(1));
+                await SendPacketAsync(stream, 0, 0, UInt32Payload((uint)_devices.Count));
                 return negotiatedProtocol;
             case 1:
                 var requestedProtocol = payload.Length >= 4 ? BinaryPrimitives.ReadUInt32LittleEndian(payload.AsSpan(0, 4)) : negotiatedProtocol;
                 negotiatedProtocol = Math.Min(ProtocolVersion, requestedProtocol);
                 Console.WriteLine($"SDK controller-data request: negotiated={negotiatedProtocol}");
-                await SendPacketAsync(stream, deviceId, 1, BuildControllerResponse(negotiatedProtocol));
+                var device = FindDevice(deviceId);
+                if (device is not null)
+                    await SendPacketAsync(stream, deviceId, 1, BuildControllerResponse(device, negotiatedProtocol));
+                else
+                    await SendPacketAsync(stream, deviceId, 1, UInt32Payload(0));
                 return negotiatedProtocol;
             case 50:
                 return negotiatedProtocol;
             case 1050:
-                ApplyFullColors(payload);
+                ApplyFullColors(deviceId, payload);
                 return negotiatedProtocol;
             case 1051:
-                ApplyZoneColors(payload);
+                ApplyZoneColors(deviceId, payload);
                 return negotiatedProtocol;
             case 1052:
-                ApplySingleColor(payload);
+                ApplySingleColor(deviceId, payload);
                 return negotiatedProtocol;
             case 1100:
             case 1101:
@@ -666,55 +678,68 @@ internal sealed class OpenRgbSdkServer : IAsyncDisposable
         }
     }
 
-    private void ApplyFullColors(byte[] payload)
+    private DeviceDefinition? FindDevice(uint deviceId) =>
+        _devices.FirstOrDefault(device => device.Id == deviceId);
+
+    private void ApplyFullColors(uint deviceId, byte[] payload)
     {
+        var device = FindDevice(deviceId);
+        if (device is null)
+            return;
         if (payload.Length < 6)
             return;
         var dataSize = BinaryPrimitives.ReadUInt32LittleEndian(payload.AsSpan(0, 4));
         var count = BinaryPrimitives.ReadUInt16LittleEndian(payload.AsSpan(4, 2));
-        if (dataSize > payload.Length - 4 || count > Zh980Layout.Leds.Count || payload.Length < 6 + count * 4)
+        if (dataSize > payload.Length - 4 || count > device.Leds.Count || payload.Length < 6 + count * 4)
             return;
 
-        var next = new Rgb[Zh980Layout.Leds.Count];
+        var next = new Rgb[device.Leds.Count];
         for (var i = 0; i < count; i++)
             next[i] = DecodeColor(payload, 6 + i * 4);
-        lock (_colorLock)
-            _colors = next;
-        _writer.Apply(next);
+        StoreAndApply(device, next);
     }
 
-    private void ApplyZoneColors(byte[] payload)
+    private void ApplyZoneColors(uint deviceId, byte[] payload)
     {
+        var device = FindDevice(deviceId);
+        if (device is null)
+            return;
         if (payload.Length < 10)
             return;
         var count = BinaryPrimitives.ReadUInt16LittleEndian(payload.AsSpan(8, 2));
         if (payload.Length < 10 + count * 4)
             return;
 
-        var next = new Rgb[Zh980Layout.Leds.Count];
+        var next = new Rgb[device.Leds.Count];
         lock (_colorLock)
-            Array.Copy(_colors, next, _colors.Length);
+            Array.Copy(_colors[device.Id], next, device.Leds.Count);
         for (var i = 0; i < Math.Min(count, next.Length); i++)
             next[i] = DecodeColor(payload, 10 + i * 4);
-        lock (_colorLock)
-            _colors = next;
-        _writer.Apply(next);
+        StoreAndApply(device, next);
     }
 
-    private void ApplySingleColor(byte[] payload)
+    private void ApplySingleColor(uint deviceId, byte[] payload)
     {
+        var device = FindDevice(deviceId);
+        if (device is null)
+            return;
         if (payload.Length < 8)
             return;
         var index = BinaryPrimitives.ReadInt32LittleEndian(payload.AsSpan(0, 4));
-        if (index < 0 || index >= Zh980Layout.Leds.Count)
+        if (index < 0 || index >= device.Leds.Count)
             return;
-        var next = new Rgb[Zh980Layout.Leds.Count];
+        var next = new Rgb[device.Leds.Count];
         lock (_colorLock)
-            Array.Copy(_colors, next, _colors.Length);
+            Array.Copy(_colors[device.Id], next, device.Leds.Count);
         next[index] = DecodeColor(payload, 4);
+        StoreAndApply(device, next);
+    }
+
+    private void StoreAndApply(DeviceDefinition device, Rgb[] colors)
+    {
         lock (_colorLock)
-            _colors = next;
-        _writer.Apply(next);
+            _colors[device.Id] = colors;
+        device.ApplyColors?.Invoke(colors);
     }
 
     private static Rgb DecodeColor(byte[] payload, int offset)
@@ -730,16 +755,16 @@ internal sealed class OpenRgbSdkServer : IAsyncDisposable
         return result;
     }
 
-    private static byte[] BuildControllerResponse(uint protocol)
+    private static byte[] BuildControllerResponse(DeviceDefinition deviceDefinition, uint protocol)
     {
         using var device = new PacketWriter();
         device.WriteInt32(5);
-        device.WriteString("ZORNHER ZH980 Physical ANSI (OpenRGB)");
-        device.WriteString("ZORNHER");
-        device.WriteString("ZORNHER ZH980 2.4G keyboard compatibility layer");
-        device.WriteString("ZH980-compat-1");
+        device.WriteString(deviceDefinition.Name);
+        device.WriteString(deviceDefinition.Manufacturer);
+        device.WriteString(deviceDefinition.Description);
+        device.WriteString(deviceDefinition.Serial);
         device.WriteString(string.Empty);
-        device.WriteString("HID: VID_05AC&PID_024F&MI_00");
+        device.WriteString(deviceDefinition.Location);
 
         device.WriteUInt16(1);
         device.WriteInt32(0);
@@ -761,13 +786,13 @@ internal sealed class OpenRgbSdkServer : IAsyncDisposable
         device.WriteUInt16(0);
 
         device.WriteUInt16(1);
-        device.WriteString("Keyboard");
+        device.WriteString(deviceDefinition.ZoneName);
         device.WriteInt32(2); // ZONE_TYPE_MATRIX; names + matrix indices preserve the full key layout
-        device.WriteUInt32((uint)Zh980Layout.Leds.Count);
-        device.WriteUInt32((uint)Zh980Layout.Leds.Count);
-        device.WriteUInt32((uint)Zh980Layout.Leds.Count);
+        device.WriteUInt32((uint)deviceDefinition.Leds.Count);
+        device.WriteUInt32((uint)deviceDefinition.Leds.Count);
+        device.WriteUInt32((uint)deviceDefinition.Leds.Count);
         const int matrixHeight = 1;
-        var matrixWidth = Zh980Layout.Leds.Count;
+        var matrixWidth = deviceDefinition.Leds.Count;
         device.WriteUInt16((ushort)(8 + matrixHeight * matrixWidth * 4));
         device.WriteUInt32(matrixHeight);
         device.WriteUInt32((uint)matrixWidth);
@@ -775,21 +800,21 @@ internal sealed class OpenRgbSdkServer : IAsyncDisposable
         // A continuous matrix keeps every index in the controller's LED
         // vector. The Artemis custom layout supplies the real physical key
         // positions, so the SDK matrix itself does not need empty cells.
-        for (uint ledIndex = 0; ledIndex < Zh980Layout.Leds.Count; ledIndex++)
+        for (uint ledIndex = 0; ledIndex < deviceDefinition.Leds.Count; ledIndex++)
             device.WriteUInt32(ledIndex);
         device.WriteUInt16(0); // segments
         if (protocol >= 5)
             device.WriteUInt32(0); // zone flags
 
-        device.WriteUInt16((ushort)Zh980Layout.Leds.Count);
-        foreach (var led in Zh980Layout.Leds)
+        device.WriteUInt16((ushort)deviceDefinition.Leds.Count);
+        foreach (var led in deviceDefinition.Leds)
         {
-            device.WriteString(Zh980Layout.SdkName(led.Name));
+            device.WriteString(DeviceCatalog.SdkName(led));
             device.WriteUInt32((uint)led.LightIndex);
         }
 
-        device.WriteUInt16((ushort)Zh980Layout.Leds.Count);
-        for (var i = 0; i < Zh980Layout.Leds.Count; i++)
+        device.WriteUInt16((ushort)deviceDefinition.Leds.Count);
+        for (var i = 0; i < deviceDefinition.Leds.Count; i++)
             device.WriteUInt32(0);
         if (protocol >= 5)
         {
@@ -871,6 +896,15 @@ internal static class Program
 {
     private static async Task Main(string[] args)
     {
+        if (args.Any(a => a.Equals("--verify-layouts", StringComparison.OrdinalIgnoreCase)))
+        {
+            var devices = DeviceCatalog.Create(null);
+            DeviceCatalog.Validate(devices);
+            foreach (var device in devices)
+                Console.WriteLine($"{device.Id}: {device.Name} ({device.Leds.Count} LEDs; {device.Transport})");
+            return;
+        }
+
         if (args.Any(a => a.Equals("--probe", StringComparison.OrdinalIgnoreCase)))
         {
             foreach (var result in Zh980Writer.ProbeOpenAttempts())
