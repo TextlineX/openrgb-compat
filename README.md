@@ -4,19 +4,21 @@ OpenRGB/Artemis compatibility layer for the user's three lighting devices.
 
 ## Current support
 
-- ZH980 2.4G mode through the keyboard's HID lighting interface (`MI_03`)
+- ZH980 2.4G mode through the keyboard's 33-byte HID OUTPUT report (`MI_03`)
 - OpenRGB SDK server on `127.0.0.1:6742`
 - 97 physical keys, including the full numpad
 - Razer Basilisk V3 X HyperSpeed HID lighting (`MI_00`, one scroll-wheel RGB zone)
 - ASUS TUF Gaming F16 / 天选 6 Pro `FX608LM` keyboard layout (105 logical keys)
-- ASUS Aura service output for the laptop's four hardware keyboard zones
+- ASUS FX608LM ITE5570 HID LampArray output (single physical zone)
 - One SDK controller for each of the three devices, so Artemis can keep them separate
 - Direct RGB updates from Artemis/OpenRGB-compatible clients for all three devices
 
-The FX608LM exposes a four-zone hardware keyboard through the installed ASUS Aura
-service. The compatibility layer keeps 105 logical keys for Artemis layout editing,
-then averages each quarter into one hardware zone. The ATKACPI/WMI path remains as a
-firmware-variant fallback.
+The ZH980 2.4G receiver uses the one-packet `05 10` static-RGB command with
+`R,G,B` at offsets 5–7. The FX608LM's ITE5570 controller is exposed by Windows as
+an HID LampArray with one physical lamp. The compatibility layer keeps 105 logical
+keys for Artemis layout editing, collapses their color to that physical zone, sends
+the standard feature reports, and keeps the installed Aura service and ATKACPI/WMI
+paths as fallbacks.
 
 ## Build and run
 
@@ -42,7 +44,8 @@ Start the compatibility executable before starting Artemis. Artemis can then dis
 `ASUS TUF Gaming F16 / 天选 6 Pro FX608LM (OpenRGB)`
 
 Use `--probe` to check the local HID and ASUS service paths. Use `--port <number>`
-to choose another OpenRGB SDK port.
+to choose another OpenRGB SDK port. Use `--demo-all-green` for two short green
+hardware flashes across all three devices.
 
 ## Scope
 

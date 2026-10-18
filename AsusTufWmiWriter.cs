@@ -5,6 +5,10 @@ using Microsoft.Win32.SafeHandles;
 internal sealed class AsusTufWmiWriter : IDisposable
 {
     private const string AuraDeviceName = "WDL_NB_KB_4ZONE_RGB_LIGHTING";
+    private const string IteLampInterface = "ite5570&col03";
+    private const byte LampRangeUpdateReportId = 0x05;
+    private const byte LampArrayControlReportId = 0x0B;
+    private const byte LampFeatureManualMode = 0x00;
     private const uint IoControlCode = 0x0022240C;
     private const uint DeviceSetCommand = 0x53564544;
     private const uint Fx608LmRgbMode = 0x00100066;
@@ -17,16 +21,30 @@ internal sealed class AsusTufWmiWriter : IDisposable
 
     private readonly object _sync = new();
     private SafeFileHandle? _handle;
+    private SafeFileHandle? _lampHandle;
+    private int _lampFeatureReportLength;
+    private dynamic? _auraSdk;
     private dynamic? _auraService;
     private int _successfulApplies;
 
-    internal bool IsOpen => _auraService is not null || _handle is { IsInvalid: false };
+    internal bool IsOpen => _lampHandle is { IsInvalid: false } ||
+                            _auraSdk is not null ||
+                            _auraService is not null ||
+                            _handle is { IsInvalid: false };
 
     internal void TryOpen()
     {
         lock (_sync)
         {
             if (IsOpen)
+                return;
+
+            TryOpenIteLampArray();
+            if (_lampHandle is { IsInvalid: false })
+                return;
+
+            TryOpenAuraSdk();
+            if (_auraSdk is not null)
                 return;
 
             TryOpenAuraService();
@@ -73,6 +91,24 @@ internal sealed class AsusTufWmiWriter : IDisposable
                 TryOpen();
             if (!IsOpen)
                 return false;
+
+            if (_lampHandle is { IsInvalid: false })
+            {
+                if (ApplyIteLampArray(colors))
+                    return true;
+
+                _lampHandle.Dispose();
+                _lampHandle = null;
+                _lampFeatureReportLength = 0;
+            }
+
+            if (_auraSdk is not null)
+            {
+                if (ApplyAuraSdk(colors))
+                    return true;
+
+                TryReleaseAuraSdk();
+            }
 
             if (_auraService is not null)
             {
@@ -122,6 +158,93 @@ internal sealed class AsusTufWmiWriter : IDisposable
         }
     }
 
+    private void TryOpenIteLampArray()
+    {
+        foreach (var path in Zh980Writer.EnumerateHidPaths().Where(path =>
+                     path.Contains(IteLampInterface, StringComparison.OrdinalIgnoreCase)))
+        {
+            var candidate = Native.CreateFile(
+                path,
+                Native.GenericRead | Native.GenericWrite,
+                Native.FileShareRead | Native.FileShareWrite,
+                IntPtr.Zero,
+                Native.OpenExisting,
+                0,
+                IntPtr.Zero);
+
+            if (candidate.IsInvalid)
+            {
+                candidate.Dispose();
+                continue;
+            }
+
+            if (!Native.HidD_GetPreparsedData(candidate, out var preparsed) || preparsed == IntPtr.Zero)
+            {
+                candidate.Dispose();
+                continue;
+            }
+
+            try
+            {
+                if (Native.HidP_GetCaps(preparsed, out var caps) != Native.HidpStatusSuccess ||
+                    caps.FeatureReportByteLength < 10)
+                {
+                    candidate.Dispose();
+                    continue;
+                }
+
+                _lampHandle = candidate;
+                _lampFeatureReportLength = caps.FeatureReportByteLength;
+                Console.WriteLine($"ASUS ITE5570 LampArray opened: {path}; feature={_lampFeatureReportLength}");
+                return;
+            }
+            finally
+            {
+                Native.HidD_FreePreparsedData(preparsed);
+            }
+        }
+    }
+
+    private bool ApplyIteLampArray(IReadOnlyList<Rgb> colors)
+    {
+        if (_lampHandle is null || _lampHandle.IsInvalid || _lampFeatureReportLength < 10)
+            return false;
+
+        var color = Average(colors);
+        var control = new byte[_lampFeatureReportLength];
+        control[0] = LampArrayControlReportId;
+        control[1] = LampFeatureManualMode;
+        if (!Native.HidD_SetFeature(_lampHandle, control, control.Length))
+        {
+            Console.WriteLine($"ASUS ITE5570 LampArray control failed: Win32={Marshal.GetLastWin32Error()}");
+            return false;
+        }
+
+        // FX608LM's standard LampArray descriptor uses report 5 for a range
+        // update and report 0x0B for the autonomous/manual control report.
+        // It exposes one lamp, so the inclusive range is lamp 0..0.
+        var range = new byte[_lampFeatureReportLength];
+        range[0] = LampRangeUpdateReportId;
+        range[1] = 0x01;
+        range[2] = 0x00;
+        range[3] = 0x00;
+        range[4] = 0x00;
+        range[5] = 0x00;
+        range[6] = color.R;
+        range[7] = color.G;
+        range[8] = color.B;
+        range[9] = 0xFF;
+        if (!Native.HidD_SetFeature(_lampHandle, range, range.Length))
+        {
+            Console.WriteLine($"ASUS ITE5570 LampArray color failed: Win32={Marshal.GetLastWin32Error()}");
+            return false;
+        }
+
+        if (Interlocked.Increment(ref _successfulApplies) <= 3)
+            Console.WriteLine($"ASUS FX608LM ITE5570 LampArray update applied ({color.R},{color.G},{color.B})");
+        return true;
+    }
+
     private void TryOpenAuraService()
     {
         try
@@ -143,6 +266,115 @@ internal sealed class AsusTufWmiWriter : IDisposable
             Console.WriteLine($"ASUS Aura service unavailable; falling back to ATKACPI: {ex.Message}");
             _auraService = null;
         }
+    }
+
+    private void TryOpenAuraSdk()
+    {
+        try
+        {
+            var sdkType = Type.GetTypeFromProgID("aura.sdk.1");
+            if (sdkType is null)
+                return;
+
+            dynamic? sdk = Activator.CreateInstance(sdkType);
+            if (sdk is null)
+                return;
+
+            sdk.SwitchMode();
+            dynamic devices = sdk.Enumerate(0);
+            var count = Convert.ToInt32(devices.Count);
+            var hasWindowsLighting = false;
+            for (var index = 0; index < count; index++)
+            {
+                dynamic device = devices.Item(index);
+                var name = Convert.ToString(device.Name) ?? string.Empty;
+                if (name.Contains("WindowsLighting", StringComparison.OrdinalIgnoreCase))
+                {
+                    hasWindowsLighting = true;
+                    break;
+                }
+            }
+
+            if (!hasWindowsLighting)
+            {
+                TryReleaseAuraSdk(sdk);
+                return;
+            }
+
+            _auraSdk = sdk;
+            Console.WriteLine("ASUS Aura SDK opened for FX608LM WindowsLighting keyboard.");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"ASUS Aura SDK unavailable; trying Aura service: {ex.Message}");
+            _auraSdk = null;
+        }
+    }
+
+    private bool ApplyAuraSdk(IReadOnlyList<Rgb> colors)
+    {
+        try
+        {
+            dynamic devices = _auraSdk!.Enumerate(0);
+            var count = Convert.ToInt32(devices.Count);
+            var applied = false;
+            for (var index = 0; index < count; index++)
+            {
+                dynamic device = devices.Item(index);
+                var name = Convert.ToString(device.Name) ?? string.Empty;
+                if (!name.Contains("WindowsLighting", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                dynamic lights = device.Lights;
+                var lightCount = Convert.ToInt32(lights.Count);
+                for (var lightIndex = 0; lightIndex < lightCount; lightIndex++)
+                {
+                    var start = lightIndex * colors.Count / Math.Max(1, lightCount);
+                    var end = (lightIndex + 1) * colors.Count / Math.Max(1, lightCount);
+                    var color = Average(colors, start, end);
+                    dynamic light = lights.Item(lightIndex);
+                    light.Red = color.R;
+                    light.Green = color.G;
+                    light.Blue = color.B;
+                }
+
+                // Aura SDK buffers color properties until Apply() is called.
+                // Without this call the COM setters succeed but the keyboard
+                // never receives a lighting update.
+                device.Apply();
+                applied = lightCount > 0;
+            }
+
+            if (!applied)
+                return false;
+
+            if (Interlocked.Increment(ref _successfulApplies) <= 3)
+                Console.WriteLine("ASUS FX608LM Aura SDK WindowsLighting update applied.");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"ASUS Aura SDK update failed; switching to Aura service: {ex.Message}");
+            return false;
+        }
+    }
+
+    private static uint PackAuraSdkColor(Rgb color) =>
+        (uint)(color.R | (color.B << 8) | (color.G << 16));
+
+    private void TryReleaseAuraSdk(dynamic? sdk = null)
+    {
+        try
+        {
+            (sdk ?? _auraSdk)?.ReleaseControl(0);
+        }
+        catch
+        {
+            // The ASUS SDK can disappear during shutdown.
+        }
+
+        if (sdk is null)
+            _auraSdk = null;
     }
 
     private bool ApplyAuraZones(IReadOnlyList<Rgb> colors)
@@ -255,6 +487,9 @@ internal sealed class AsusTufWmiWriter : IDisposable
 
     private void CloseHandle()
     {
+        _lampHandle?.Dispose();
+        _lampHandle = null;
+        _lampFeatureReportLength = 0;
         _handle?.Dispose();
         _handle = null;
     }
@@ -274,6 +509,7 @@ internal sealed class AsusTufWmiWriter : IDisposable
                     // The ASUS service can disappear during shutdown.
                 }
             }
+            TryReleaseAuraSdk();
             _auraService = null;
             CloseHandle();
         }

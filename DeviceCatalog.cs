@@ -56,12 +56,12 @@ internal static class DeviceCatalog
                 2,
                 "ASUS TUF Gaming F16 / 天选 6 Pro FX608LM (OpenRGB)",
                 "ASUS",
-                "ASUS FX608LM full-size RGB keyboard layout",
+                "ASUS FX608LM full-size RGB keyboard layout backed by one ITE5570 lamp",
                 "FX608LM-compat-1",
-                "ASUS ACPI: FX608LM",
+                "HID: ITE5570&COL03 LampArray",
                 ControllerKind.Keyboard,
                 Fx608LmLayout.Leds,
-                asusWriter is null ? "ASUS Aura/WMI writer unavailable" : "ASUS Aura 4-zone lighting implemented",
+                asusWriter is null ? "ASUS ITE5570 writer unavailable" : "ASUS ITE5570 LampArray lighting implemented",
                 asusWriter is null ? null : colors => _ = asusWriter.Apply(colors)),
         ];
     }

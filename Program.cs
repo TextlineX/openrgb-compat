@@ -263,12 +263,15 @@ internal static class Zh980Layout
 
 internal sealed class Zh980Writer : IDisposable
 {
-    private const int PacketDataLength = 64;
-    private const int ColorBufferSize = 576;
+    private const int WiredPacketDataLength = 64;
+    private const int WiredColorBufferSize = 576;
+    private const int WirelessMinimumReportLength = 33;
     private SafeFileHandle? _handle;
     private string? _path;
+    private ushort _outputReportLength;
     private ushort _featureReportLength;
     private int _successfulApplies;
+    private int _wirelessTransportLogged;
 
     private readonly record struct HidOpenAttempt(string Name, uint Access, uint ShareMode, uint Flags);
 
@@ -300,7 +303,15 @@ internal sealed class Zh980Writer : IDisposable
                      .Where(IsSupportedLightingInterface)
                      .OrderByDescending(IsWirelessLightingInterface))
         {
-            foreach (var attempt in OpenAttempts)
+            var attempts = IsWirelessLightingInterface(path)
+                ? OpenAttempts
+                    .Where(attempt => attempt.Name is "read-write/synchronous/exclusive" or "read-write/synchronous/shared")
+                    .Concat(OpenAttempts.Where(attempt => attempt.Name is "write-only/synchronous/shared" or "write-only/synchronous/exclusive"))
+                    .Concat(OpenAttempts.Where(attempt => attempt.Name.StartsWith("no-access", StringComparison.Ordinal)))
+                    .Concat(OpenAttempts.Where(attempt => attempt.Name.StartsWith("read-write", StringComparison.Ordinal)))
+                : OpenAttempts;
+
+            foreach (var attempt in attempts)
             {
                 var candidate = Native.CreateFile(path, attempt.Access, attempt.ShareMode,
                     IntPtr.Zero, Native.OpenExisting, attempt.Flags, IntPtr.Zero);
@@ -337,7 +348,54 @@ internal sealed class Zh980Writer : IDisposable
         if (!IsOpen)
             return false;
 
-        var report = new byte[PacketDataLength + 1];
+        // The 2.4G receiver exposes a 32-byte OUTPUT report (33 bytes in the
+        // Windows HID API including report ID 0). It does not accept the
+        // 64-byte wired transaction protocol: Windows can report the write as
+        // successful while the receiver silently ignores it.
+        if (_path is not null && IsWirelessLightingInterface(_path))
+            return ApplyWireless(colors);
+
+        return ApplyWired(colors);
+    }
+
+    private bool ApplyWireless(IReadOnlyList<Rgb> colors)
+    {
+        var color = colors.Count == 0 ? new Rgb(0, 0, 0) : Average(colors);
+        // ZH980's 2.4G receiver exposes one 32-byte OUTPUT report. Windows
+        // prepends report ID 0, making the user-mode buffer 33 bytes. The
+        // wireless firmware accepts one all-in-one 05 10 packet; unlike the
+        // wired keyboard protocol it has no checksum or commit sequence.
+        var report = new byte[Math.Max(WirelessMinimumReportLength, (int)_outputReportLength)];
+        report[1] = 0x05;
+        report[2] = 0x10;
+        report[4] = color is { R: 0, G: 0, B: 0 } ? (byte)0 : (byte)1;
+        report[5] = color.R;
+        report[6] = color.G;
+        report[7] = color.B;
+        report[12] = 0x00;
+        report[13] = 0x05;
+        report[14] = 0x03;
+        report[15] = 0x00;
+        report[18] = 0xAA;
+        report[19] = 0x55;
+
+        var success = SendReport(report, $"2.4G static RGB ({color.R},{color.G},{color.B})");
+        if (success && Interlocked.Increment(ref _successfulApplies) <= 3)
+            Console.WriteLine($"ZH980 2.4G lighting update applied ({color.R},{color.G},{color.B})");
+        return success;
+    }
+
+    private static Rgb Average(IReadOnlyList<Rgb> colors)
+    {
+        var r = colors.Sum(color => color.R) / colors.Count;
+        var g = colors.Sum(color => color.G) / colors.Count;
+        var b = colors.Sum(color => color.B) / colors.Count;
+        return new Rgb((byte)r, (byte)g, (byte)b);
+    }
+
+    private bool ApplyWired(IReadOnlyList<Rgb> colors)
+    {
+        var report = new byte[WiredPacketDataLength + 1];
         if (!SendCommand(report, 0x04, 0x18, "customization on"))
             return false;
 
@@ -373,8 +431,8 @@ internal sealed class Zh980Writer : IDisposable
                 return false;
         }
 
-        var colorBuffer = new byte[ColorBufferSize];
-        for (var slot = 0; slot < ColorBufferSize; slot += 4)
+        var colorBuffer = new byte[WiredColorBufferSize];
+        for (var slot = 0; slot < WiredColorBufferSize; slot += 4)
             colorBuffer[slot] = 0x80;
 
         for (var led = 0; led < Math.Min(colors.Count, Zh980Layout.Leds.Count); led++)
@@ -390,7 +448,7 @@ internal sealed class Zh980Writer : IDisposable
         for (var packet = 0; packet < 9; packet++)
         {
             Array.Clear(report);
-            Buffer.BlockCopy(colorBuffer, packet * PacketDataLength, report, 1, PacketDataLength);
+            Buffer.BlockCopy(colorBuffer, packet * WiredPacketDataLength, report, 1, WiredPacketDataLength);
             if (!SendReport(report, $"colour packet {packet + 1}/9"))
                 return false;
         }
@@ -427,21 +485,23 @@ internal sealed class Zh980Writer : IDisposable
     {
         if (!IsOpen || _handle is null)
             return false;
-        var transport = "output";
-        var ok = Native.HidD_SetOutputReport(_handle, report, report.Length);
+
+        var wireless = _path is not null && IsWirelessLightingInterface(_path);
+        var transport = wireless ? "write" : "output";
+        var written = 0;
+        var ok = wireless
+            ? Native.WriteFile(_handle, report, report.Length, out written, IntPtr.Zero) && written == report.Length
+            : Native.HidD_SetOutputReport(_handle, report, report.Length);
         if (!ok)
         {
-            transport = "write";
-            ok = Native.WriteFile(_handle, report, report.Length, out var written, IntPtr.Zero) &&
-                 written == report.Length;
+            transport = wireless ? "output" : "write";
+            ok = wireless
+                ? Native.HidD_SetOutputReport(_handle, report, report.Length)
+                : Native.WriteFile(_handle, report, report.Length, out written, IntPtr.Zero) && written == report.Length;
         }
         if (!ok)
         {
             transport = "feature";
-            // HidAPI pads to the collection's longest feature-report length
-            // before calling HidD_SetFeature. The firmware uses a 64-byte
-            // payload but its Windows HID collection advertises a longer
-            // feature buffer, so passing only 65 bytes is rejected.
             var featureLength = Math.Max(report.Length, _featureReportLength);
             var featureReport = new byte[featureLength];
             Buffer.BlockCopy(report, 0, featureReport, 0, report.Length);
@@ -454,21 +514,26 @@ internal sealed class Zh980Writer : IDisposable
             CloseHandle();
             return false;
         }
+        if (wireless && Interlocked.Exchange(ref _wirelessTransportLogged, 1) == 0)
+            Console.WriteLine($"ZH980 wireless HID transport: {transport} ({report.Length} bytes)");
         Thread.Sleep(10);
         return true;
     }
+
 
     private void CloseHandle()
     {
         _handle?.Dispose();
         _handle = null;
         _path = null;
+        _outputReportLength = 0;
         _featureReportLength = 0;
     }
 
     private void ReadReportCapabilities(SafeFileHandle handle)
     {
         _featureReportLength = 0;
+        _outputReportLength = 0;
         var buffersOk = Native.HidD_SetNumInputBuffers(handle, 64);
         var preparsedOk = Native.HidD_GetPreparsedData(handle, out var preparsed);
         if (!preparsedOk || preparsed == IntPtr.Zero)
@@ -481,7 +546,10 @@ internal sealed class Zh980Writer : IDisposable
             var status = Native.HidP_GetCaps(preparsed, out var caps);
             Console.WriteLine($"ZH980 HID caps status=0x{status:X8}, input={caps.InputReportByteLength}, output={caps.OutputReportByteLength}, feature={caps.FeatureReportByteLength}");
             if (status == Native.HidpStatusSuccess)
+            {
+                _outputReportLength = caps.OutputReportByteLength;
                 _featureReportLength = caps.FeatureReportByteLength;
+            }
         }
         finally
         {
@@ -944,6 +1012,31 @@ internal static class Program
         if (args.Any(a => a.Equals("--demo-red", StringComparison.OrdinalIgnoreCase)))
         {
             Console.WriteLine($"ZH980 demo red: {writer.DemoRed()}");
+            return;
+        }
+
+        if (args.Any(a => a.Equals("--demo-all-green", StringComparison.OrdinalIgnoreCase)))
+        {
+            var zhGreen = Enumerable.Repeat(new Rgb(0, 255, 0), Zh980Layout.Leds.Count).ToArray();
+            var zhOff = Enumerable.Repeat(new Rgb(0, 0, 0), Zh980Layout.Leds.Count).ToArray();
+            var razerGreen = new[] { new Rgb(0, 255, 0) };
+            var razerOff = new[] { new Rgb(0, 0, 0) };
+            var asusGreen = Enumerable.Repeat(new Rgb(0, 255, 0), 105).ToArray();
+            var asusOff = Enumerable.Repeat(new Rgb(0, 0, 0), 105).ToArray();
+
+            for (var pass = 1; pass <= 2; pass++)
+            {
+                Console.WriteLine($"Hardware green test {pass}/2: sending green.");
+                Console.WriteLine($"ZH980 transport result: {writer.Apply(zhGreen)}");
+                Console.WriteLine($"Razer transport result: {razerWriter.Apply(razerGreen)}");
+                Console.WriteLine($"ASUS transport result: {asusWriter.Apply(asusGreen)}");
+                Thread.Sleep(600);
+                writer.Apply(zhOff);
+                razerWriter.Apply(razerOff);
+                asusWriter.Apply(asusOff);
+                Thread.Sleep(250);
+            }
+
             return;
         }
 
