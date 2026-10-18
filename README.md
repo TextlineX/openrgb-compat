@@ -7,14 +7,16 @@ OpenRGB/Artemis compatibility layer for the user's three lighting devices.
 - ZH980 2.4G mode through the keyboard's HID lighting interface (`MI_03`)
 - OpenRGB SDK server on `127.0.0.1:6742`
 - 97 physical keys, including the full numpad
-- Razer Basilisk V3 X HyperSpeed logical mouse layout (scroll wheel and Razer logo)
+- Razer Basilisk V3 X HyperSpeed HID lighting (`MI_00`, one scroll-wheel RGB zone)
 - ASUS TUF Gaming F16 / 天选 6 Pro `FX608LM` keyboard layout (105 logical keys)
+- ASUS Aura service output for the laptop's four hardware keyboard zones
 - One SDK controller for each of the three devices, so Artemis can keep them separate
-- Direct RGB updates from Artemis/OpenRGB-compatible clients for the ZH980
+- Direct RGB updates from Artemis/OpenRGB-compatible clients for all three devices
 
-The Razer and ASUS entries are currently layout registrations. Their device-specific
-HID/Aura writers are intentionally separate from the ZH980 transport and are not
-claimed as complete hardware writers yet.
+The FX608LM exposes a four-zone hardware keyboard through the installed ASUS Aura
+service. The compatibility layer keeps 105 logical keys for Artemis layout editing,
+then averages each quarter into one hardware zone. The ATKACPI/WMI path remains as a
+firmware-variant fallback.
 
 ## Build and run
 
@@ -38,6 +40,9 @@ Start the compatibility executable before starting Artemis. Artemis can then dis
 `Razer Basilisk V3 X HyperSpeed (OpenRGB)`
 
 `ASUS TUF Gaming F16 / 天选 6 Pro FX608LM (OpenRGB)`
+
+Use `--probe` to check the local HID and ASUS service paths. Use `--port <number>`
+to choose another OpenRGB SDK port.
 
 ## Scope
 

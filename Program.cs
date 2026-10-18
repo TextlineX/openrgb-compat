@@ -130,6 +130,18 @@ internal static class Native
     internal static extern bool WriteFile(SafeFileHandle file, byte[] buffer, int numberOfBytesToWrite,
         out int numberOfBytesWritten, IntPtr overlapped);
 
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool DeviceIoControl(
+        SafeFileHandle device,
+        uint controlCode,
+        byte[] inputBuffer,
+        uint inputBufferSize,
+        byte[] outputBuffer,
+        uint outputBufferSize,
+        out uint bytesReturned,
+        IntPtr overlapped);
+
     internal const uint GenericRead = 0x80000000;
     internal const uint GenericWrite = 0x40000000;
     internal const uint FileShareRead = 0x1;
@@ -556,10 +568,14 @@ internal sealed class OpenRgbSdkServer : IAsyncDisposable
     private readonly object _colorLock = new();
     private readonly Dictionary<uint, Rgb[]> _colors;
 
-    internal OpenRgbSdkServer(int port, Zh980Writer writer)
+    internal OpenRgbSdkServer(
+        int port,
+        Zh980Writer writer,
+        RazerBasiliskWriter razerWriter,
+        AsusTufWmiWriter asusWriter)
     {
         _listener = new TcpListener(IPAddress.Loopback, port);
-        _devices = DeviceCatalog.Create(writer);
+        _devices = DeviceCatalog.Create(writer, razerWriter, asusWriter);
         DeviceCatalog.Validate(_devices);
         _colors = _devices.ToDictionary(
             device => device.Id,
@@ -690,7 +706,7 @@ internal sealed class OpenRgbSdkServer : IAsyncDisposable
             return;
         var dataSize = BinaryPrimitives.ReadUInt32LittleEndian(payload.AsSpan(0, 4));
         var count = BinaryPrimitives.ReadUInt16LittleEndian(payload.AsSpan(4, 2));
-        if (dataSize > payload.Length - 4 || count > device.Leds.Count || payload.Length < 6 + count * 4)
+        if (dataSize != payload.Length || count > device.Leds.Count || payload.Length < 6 + count * 4)
             return;
 
         var next = new Rgb[device.Leds.Count];
@@ -705,6 +721,9 @@ internal sealed class OpenRgbSdkServer : IAsyncDisposable
         if (device is null)
             return;
         if (payload.Length < 10)
+            return;
+        var dataSize = BinaryPrimitives.ReadUInt32LittleEndian(payload.AsSpan(0, 4));
+        if (dataSize != payload.Length)
             return;
         var count = BinaryPrimitives.ReadUInt16LittleEndian(payload.AsSpan(8, 2));
         if (payload.Length < 10 + count * 4)
@@ -898,7 +917,7 @@ internal static class Program
     {
         if (args.Any(a => a.Equals("--verify-layouts", StringComparison.OrdinalIgnoreCase)))
         {
-            var devices = DeviceCatalog.Create(null);
+            var devices = DeviceCatalog.Create(null, null, null);
             DeviceCatalog.Validate(devices);
             foreach (var device in devices)
                 Console.WriteLine($"{device.Id}: {device.Name} ({device.Leds.Count} LEDs; {device.Transport})");
@@ -909,11 +928,19 @@ internal static class Program
         {
             foreach (var result in Zh980Writer.ProbeOpenAttempts())
                 Console.WriteLine($"candidate={result.Path} attempt={result.Attempt} valid={result.Valid} error={result.Error}");
+            using var razerProbe = new RazerBasiliskWriter();
+            razerProbe.TryOpen();
+            using var asusProbe = new AsusTufWmiWriter();
+            asusProbe.TryOpen();
             return;
         }
 
         using var writer = new Zh980Writer();
         writer.TryOpen();
+        using var razerWriter = new RazerBasiliskWriter();
+        razerWriter.TryOpen();
+        using var asusWriter = new AsusTufWmiWriter();
+        asusWriter.TryOpen();
         if (args.Any(a => a.Equals("--demo-red", StringComparison.OrdinalIgnoreCase)))
         {
             Console.WriteLine($"ZH980 demo red: {writer.DemoRed()}");
@@ -925,7 +952,7 @@ internal static class Program
         if (portIndex >= 0 && portIndex + 1 < args.Length && int.TryParse(args[portIndex + 1], out var parsedPort))
             port = parsedPort;
 
-        await using var server = new OpenRgbSdkServer(port, writer);
+        await using var server = new OpenRgbSdkServer(port, writer, razerWriter, asusWriter);
         Console.CancelKeyPress += (_, eventArgs) => eventArgs.Cancel = true;
         await server.RunAsync();
     }

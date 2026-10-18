@@ -21,7 +21,10 @@ internal sealed record DeviceDefinition(
 
 internal static class DeviceCatalog
 {
-    internal static IReadOnlyList<DeviceDefinition> Create(Zh980Writer? zh980Writer)
+    internal static IReadOnlyList<DeviceDefinition> Create(
+        Zh980Writer? zh980Writer,
+        RazerBasiliskWriter? razerWriter = null,
+        AsusTufWmiWriter? asusWriter = null)
     {
         return
         [
@@ -43,11 +46,11 @@ internal static class DeviceCatalog
                 "Razer",
                 "Razer Basilisk V3 X HyperSpeed logical RGB layout",
                 "BASILISK-V3X-compat-1",
-                "HID: VID_1532&PID_00B9&MI_02",
+                "HID: VID_1532&PID_00B9&MI_00",
                 ControllerKind.Mouse,
                 BasiliskV3XLayout.Leds,
-                "Layout registered; Razer HID writer pending",
-                null),
+                razerWriter is null ? "Razer HID writer unavailable" : "Razer HID lighting implemented",
+                razerWriter is null ? null : colors => _ = razerWriter.Apply(colors)),
 
             new DeviceDefinition(
                 2,
@@ -58,8 +61,8 @@ internal static class DeviceCatalog
                 "ASUS ACPI: FX608LM",
                 ControllerKind.Keyboard,
                 Fx608LmLayout.Leds,
-                "Layout registered; ASUS Aura writer pending",
-                null),
+                asusWriter is null ? "ASUS Aura/WMI writer unavailable" : "ASUS Aura 4-zone lighting implemented",
+                asusWriter is null ? null : colors => _ = asusWriter.Apply(colors)),
         ];
     }
 
@@ -121,12 +124,12 @@ internal static class DeviceCatalog
 
 internal static class BasiliskV3XLayout
 {
-    // The V3 X HyperSpeed exposes Chroma RGB, represented here as the two
-    // user-facing logical regions used by the compatibility layer.
+    // OpenRGB's device definition exposes one controllable Chroma region:
+    // the scroll wheel. The V3 X HyperSpeed does not expose a separately
+    // controllable logo region through this protocol.
     internal static readonly IReadOnlyList<LedDefinition> Leds =
     [
         new("Mouse_ScrollWheel", 0),
-        new("Mouse_RazerLogo", 1),
     ];
 }
 
