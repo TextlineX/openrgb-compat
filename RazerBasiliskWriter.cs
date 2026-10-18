@@ -97,7 +97,9 @@ internal sealed class RazerBasiliskWriter : IDisposable
             if (!IsOpen)
                 return false;
 
-            var color = colors.Count == 0 ? new Rgb(0, 0, 0) : colors[0];
+            var color = colors.Count > BasiliskV3XLayout.ScrollWheelIndex
+                ? colors[BasiliskV3XLayout.ScrollWheelIndex]
+                : colors.Count == 0 ? new Rgb(0, 0, 0) : colors[0];
 
             // Razer's extended-matrix custom frame for the one-cell mouse
             // region: row 0, columns 0..0, followed by RGB bytes.

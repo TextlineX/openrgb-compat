@@ -7,7 +7,8 @@ OpenRGB/Artemis compatibility layer for the user's three lighting devices.
 - ZH980 2.4G mode through the keyboard's 33-byte HID OUTPUT report (`MI_03`)
 - OpenRGB SDK server on `127.0.0.1:6742`
 - 97 physical keys, including the full numpad
-- Razer Basilisk V3 X HyperSpeed HID lighting (`MI_00`, one scroll-wheel RGB zone)
+- Razer Basilisk V3 X HyperSpeed HID lighting (`MI_00`, one physical scroll-wheel RGB zone)
+- Basilisk layout exposes logical regions for left/right buttons, DPI, side buttons, scroll wheel, and logo; only the scroll wheel is hardware-backed
 - ASUS TUF Gaming F16 / 天选 6 Pro `FX608LM` keyboard layout (105 logical keys)
 - ASUS FX608LM ITE5570 HID LampArray output (single physical zone)
 - One SDK controller for each of the three devices, so Artemis can keep them separate

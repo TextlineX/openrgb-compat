@@ -116,6 +116,12 @@ internal static class DeviceCatalog
         return led.Name switch
         {
             "Mouse_ScrollWheel" => "LED: Scroll Wheel",
+            "Mouse_LeftButton" => "Button: Left",
+            "Mouse_RightButton" => "Button: Right",
+            "Mouse_DpiButton" => "Button: DPI",
+            "Mouse_SideBack" => "Button: Side Back",
+            "Mouse_SideForward" => "Button: Side Forward",
+            "Mouse_Logo" => "Area: Razer Logo",
             "Mouse_RazerLogo" => "LED: Razer Logo",
             _ => led.Name,
         };
@@ -124,13 +130,22 @@ internal static class DeviceCatalog
 
 internal static class BasiliskV3XLayout
 {
-    // OpenRGB's device definition exposes one controllable Chroma region:
-    // the scroll wheel. The V3 X HyperSpeed does not expose a separately
-    // controllable logo region through this protocol.
+    // The physical RGB transport currently exposes the scroll wheel. The
+    // remaining regions are logical layout areas so Artemis can show and
+    // target the mouse buttons without pretending they are separate RGB
+    // channels in the Razer HID protocol.
     internal static readonly IReadOnlyList<LedDefinition> Leds =
     [
-        new("Mouse_ScrollWheel", 0),
+        new("Mouse_LeftButton", 0),
+        new("Mouse_RightButton", 1),
+        new("Mouse_ScrollWheel", 2),
+        new("Mouse_DpiButton", 3),
+        new("Mouse_SideBack", 4),
+        new("Mouse_SideForward", 5),
+        new("Mouse_Logo", 6),
     ];
+
+    internal const int ScrollWheelIndex = 2;
 }
 
 internal static class Fx608LmLayout

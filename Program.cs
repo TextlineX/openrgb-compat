@@ -1291,8 +1291,8 @@ internal static class Program
         {
             var zhGreen = Enumerable.Repeat(new Rgb(0, 255, 0), Zh980Layout.Leds.Count).ToArray();
             var zhOff = Enumerable.Repeat(new Rgb(0, 0, 0), Zh980Layout.Leds.Count).ToArray();
-            var razerGreen = new[] { new Rgb(0, 255, 0) };
-            var razerOff = new[] { new Rgb(0, 0, 0) };
+            var razerGreen = Enumerable.Repeat(new Rgb(0, 255, 0), BasiliskV3XLayout.Leds.Count).ToArray();
+            var razerOff = Enumerable.Repeat(new Rgb(0, 0, 0), BasiliskV3XLayout.Leds.Count).ToArray();
             var asusGreen = Enumerable.Repeat(new Rgb(0, 255, 0), 105).ToArray();
             var asusOff = Enumerable.Repeat(new Rgb(0, 0, 0), 105).ToArray();
 
